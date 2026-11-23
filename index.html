@@ -268,6 +268,12 @@ body[data-wx="storm"] #scene .bolt{animation:flash 9s linear infinite;opacity:0}
 .overview{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin:6px 0 14px}
 .ovCard{display:flex;justify-content:space-between;align-items:stretch;gap:12px;text-align:left;padding:16px 18px;border-radius:20px;border:1px solid var(--line);min-height:118px;color:#fff;text-shadow:0 1px 3px #0008;background:linear-gradient(135deg,#34495e,#1e2b38)}
 .ovCard:hover{border-color:#ffffff90;transform:translateY(-1px)}
+.ovCard{cursor:pointer}
+.overview.editing .ovCard{cursor:default}
+.ovBar{margin:4px 0 10px}
+.ovMove{display:flex;flex-direction:column;gap:6px;margin-right:4px}
+.ovMove button{padding:4px 10px;line-height:1;font-size:15px;background:#0c121bb3}
+.ovMove button:disabled{opacity:.35;cursor:default}
 .ovLeft{display:flex;gap:12px;align-items:flex-start;min-width:0}
 .ovLeft img{height:44px;width:auto;flex:none;filter:drop-shadow(0 2px 3px #0006)}
 .ovLeft>span{display:flex;flex-direction:column;min-width:0}
@@ -287,6 +293,8 @@ body[data-wx="storm"] #scene .bolt{animation:flash 9s linear infinite;opacity:0}
 .ovCard[data-tod="night"]{background:linear-gradient(135deg,#1c2652,#070c22)}
 .ovCard[data-tod="night"][data-wx="rain"],.ovCard[data-tod="night"][data-wx="cloud"],.ovCard[data-tod="night"][data-wx="fog"]{background:linear-gradient(135deg,#2a3340,#10151c)}
 @media(max-width:760px){.overview{grid-template-columns:minmax(0,1fr)}.ovTemp{font-size:40px}}
+#backOverview{font-weight:600}
+.tripSearch{display:none!important}
 </style>
 </head>
 <body>
@@ -312,7 +320,7 @@ body[data-wx="storm"] #scene .bolt{animation:flash 9s linear infinite;opacity:0}
   <section id="overview" hidden><div class="out"></div></section>
 
   <section id="forecast">
-    <div class="bar"><select id="horizon" aria-label="Anzahl Tage"><option value="7">7 Tage</option><option value="10">10 Tage</option><option value="16">16 Tage</option></select><small class="soft">Tag anklicken für den Stundenverlauf. Ab etwa Tag 7 ist es nur noch ein Trend.</small></div>
+    <div class="bar"><button id="backOverview" hidden>&#8249; Übersicht</button><select id="horizon" aria-label="Anzahl Tage"><option value="7">7 Tage</option><option value="10">10 Tage</option><option value="16">16 Tage</option></select><small class="soft">Tag anklicken für den Stundenverlauf. Ab etwa Tag 7 ist es nur noch ein Trend.</small></div>
     <div class="out"></div>
   </section>
 
@@ -353,10 +361,10 @@ body[data-wx="storm"] #scene .bolt{animation:flash 9s linear infinite;opacity:0}
       <button id="tripSaveBtn">&#9734; Reise merken</button>
     </div>
     <div class="bar" id="tripSaved"></div>
-    <div class="out"><p class="msg">Such dir oben einen Urlaubsort, wähle den Reisezeitraum und klicke auf „Auswerten“.</p></div>
+    <div class="out">Auswerten.</p>„Auswerten“.</p></div>
   </section>
 
-  <footer>Wetterdaten: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0), Copernicus ERA5, ECMWF. Ortsfotos, Wappen und Beschreibungen: Wikipedia, Wikidata und Wikimedia Commons (Urheber jeweils am Bild). Postleitzahlen: <a href="https://zippopotam.us/" target="_blank" rel="noopener">Zippopotam</a> / GeoNames. Vergangene Werte sind Modellrechnungen aus Messdaten, keine Messung direkt am Ort. Niederschlag, Schnee und Wind können besonders in Tälern und Bergen stark abweichen. Markierungen: Schnee ab 0,5 cm am Tag, Frost unter 0 °C, Sturmböen ab 65 km/h. Sie ersetzen keine amtliche Wetterwarnung. Sonnenstunden sind aus Bewölkung und Strahlung berechnet und liegen oft deutlich über gemessenen Werten (in Berlin etwa um die Hälfte). Für den Vergleich zwischen Jahren oder Monaten taugen sie besser als für absolute Zahlen.</footer>
+  <footer>Wetterdaten: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0), Copernicus ERA5, ECMWF. Ortsfotos, Wappen und Beschreibungen: Wikipedia, Wikidata und Wikimedia Commons (Urheber jeweils am Bild). Ortssuche ergänzend: <a href="https://photon.komoot.io/" target="_blank" rel="noopener">Photon</a> (OpenStreetMap). Postleitzahlen: <a href="https://zippopotam.us/" target="_blank" rel="noopener">Zippopotam</a> / GeoNames. Vergangene Werte sind Modellrechnungen aus Messdaten, keine Messung direkt am Ort. Niederschlag, Schnee und Wind können besonders in Tälern und Bergen stark abweichen. Markierungen: Schnee ab 0,5 cm am Tag, Frost unter 0 °C, Sturmböen ab 65 km/h. Sie ersetzen keine amtliche Wetterwarnung. Sonnenstunden sind aus Bewölkung und Strahlung berechnet und liegen oft deutlich über gemessenen Werten (in Berlin etwa um die Hälfte). Für den Vergleich zwischen Jahren oder Monaten taugen sie besser als für absolute Zahlen.</footer>
 </main>
 
 <script>
@@ -1056,10 +1064,10 @@ function initTrips(){
     if (text.length < 2) return;
     tripTimer = setTimeout(async () => {
       try {
-        const found = (await get('geocoding-api', 'search', {name: text, count: 10, language: 'de'})).results || [];
+        const found = await searchPlaces(text, 10);
         if (t !== tripSearchNo) return;
         box.innerHTML = found.length ? found.map(p => `<button>${esc(p.name)} <small>${esc([p.admin1, p.country].filter(Boolean).join(', '))}</small></button>`).join('') : '<p class="msg">Kein Ort gefunden.</p>';
-        box.querySelectorAll('button').forEach((b, i) => b.onclick = () => { tripPick(found[i]); loadTrip() });
+        box.querySelectorAll('button').forEach((b, i) => b.onclick = async () => { tripPick(await withTimezone(found[i])); loadTrip() });
       } catch (e) { if (t === tripSearchNo) box.textContent = e.message }
     }, 300);
   };
@@ -1073,6 +1081,17 @@ function initTrips(){
 
 // Übersicht: alle gespeicherten Orte mit aktuellem Wetter, in einem einzigen Abruf.
 const wxOf = code => code == null ? 'cloud' : code >= 95 ? 'storm' : (code >= 71 && code <= 77) || code === 85 || code === 86 ? 'snow' : code >= 51 ? 'rain' : code >= 45 ? 'fog' : code === 3 ? 'cloud' : code >= 1 ? 'partly' : 'clear';
+
+let ovEdit = false;
+
+function moveFav(i, step){
+  const j = i + step;
+  if (j < 0 || j >= favs.length) return;
+  [favs[i], favs[j]] = [favs[j], favs[i]];
+  store.set('favs', favs);
+  header();
+  loadOverview();
+}
 
 function loadOverview(){
   return run('overview', async (out, live) => {
@@ -1088,15 +1107,24 @@ function loadOverview(){
     });
     if (!live()) return;
     const rows = Array.isArray(data) ? data : [data];
-    out.innerHTML = `<div class="overview">${list.map((p, i) => {
+    out.innerHTML = (list.length > 1 ? `<div class="bar ovBar"><button id="ovEdit">${ovEdit ? '&#10003; Fertig' : '&#8645; Reihenfolge ändern'}</button>${ovEdit ? '<small class="soft">Mit ▲ ▼ verschieben. Der oberste Ort steht auch im Orte-Menü zuerst.</small>' : ''}</div>` : '')
+      + `<div class="overview${ovEdit ? ' editing' : ''}">${list.map((p, i) => {
       const r = rows[i], c = r?.current || {}, d = r?.daily || {}, coat = armsOf(p);
       const time = c.time ? c.time.slice(11, 16) : '';
-      return `<button class="ovCard" data-o="${i}" data-wx="${wxOf(c.weather_code)}" data-tod="${c.is_day ? 'day' : 'night'}">
-        <span class="ovLeft">${coat ? `<img src="${coat}" alt="">` : ''}<span><b class="ovName">${esc(p.name)}</b><small>${esc([p.admin1, p.country].filter((v, k, a) => v && a.indexOf(v) === k).join(', '))}${time ? ` · ${time} Uhr` : ''}</small><span class="ovWx"><i class="emoji">${icon(c.weather_code, c.is_day)}</i>${weather(c.weather_code)[1]}</span></span></span>
+      const move = ovEdit ? `<span class="ovMove"><button data-up="${i}" ${i === 0 ? 'disabled' : ''} aria-label="${esc(p.name)} nach oben">&#9650;</button><button data-down="${i}" ${i === list.length - 1 ? 'disabled' : ''} aria-label="${esc(p.name)} nach unten">&#9660;</button></span>` : '';
+      return `<div class="ovCard" role="button" tabindex="0" data-o="${i}" data-wx="${wxOf(c.weather_code)}" data-tod="${c.is_day ? 'day' : 'night'}">
+        ${move}<span class="ovLeft">${coat ? `<img src="${coat}" alt="">` : ''}<span><b class="ovName">${esc(p.name)}</b><small>${esc([p.admin1, p.country].filter((v, k, a) => v && a.indexOf(v) === k).join(', '))}${time ? ` · ${time} Uhr` : ''}</small><span class="ovWx"><i class="emoji">${icon(c.weather_code, c.is_day)}</i>${weather(c.weather_code)[1]}</span></span></span>
         <span class="ovRight"><span class="ovTemp">${num(c.temperature_2m, 0)}°</span><small>H: ${num(d.temperature_2m_max?.[0], 0)}° · T: ${num(d.temperature_2m_min?.[0], 0)}°</small><small>${d.precipitation_probability_max?.[0] != null ? `&#128167; ${d.precipitation_probability_max[0]} %` : ''}</small></span>
-      </button>`;
+      </div>`;
     }).join('')}</div><p class="soft">Antippen öffnet die Vorhersage für den Ort. Die Werte werden beim Öffnen der Übersicht aktualisiert.</p>`;
-    out.querySelectorAll('.ovCard').forEach(b => b.onclick = () => { view = 'forecast'; choose(list[+b.dataset.o]) });
+    const open = i => { if (!ovEdit) { view = 'forecast'; choose(list[i]) } };
+    out.querySelectorAll('.ovCard').forEach(c => {
+      c.onclick = () => open(+c.dataset.o);
+      c.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(+c.dataset.o) } };
+    });
+    out.querySelectorAll('[data-up]').forEach(b => b.onclick = e => { e.stopPropagation(); moveFav(+b.dataset.up, -1) });
+    out.querySelectorAll('[data-down]').forEach(b => b.onclick = e => { e.stopPropagation(); moveFav(+b.dataset.down, 1) });
+    if ($('#ovEdit')) $('#ovEdit').onclick = () => { ovEdit = !ovEdit; loadOverview() };
   });
 }
 
@@ -1104,6 +1132,9 @@ function show(){
   document.querySelectorAll('section').forEach(s => s.hidden = s.id !== view);
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === view));
   $('#viewSelect').value = view;
+  $('#q').placeholder = view === 'trips' ? 'Urlaubsort suchen, z. B. Mallorca …' : 'Ort oder PLZ suchen …';
+  $('#results').innerHTML = '';
+  $('#backOverview').hidden = !favs.length;
   return {overview: loadOverview, forecast: loadForecast, history: loadHistory, months: loadMonths, years: loadYears, trips: () => tripPlace ? loadTrip() : null}[view]();
 }
 
@@ -1234,6 +1265,34 @@ function header(){
   [place, ...favs].forEach(wikiFor);
 }
 
+// Ortssuche nach Namen: zuerst Open-Meteo. Fehlt der Ort dort (z. B. Linsengericht), zusätzlich Photon (OpenStreetMap).
+const plainName = s => String(s || '').toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/[\s-]+/g, ' ').trim();
+const PHOTON_KEEP = /^(place:(city|town|village|municipality|suburb|borough|quarter|hamlet|island)|boundary:administrative|natural:peak)$/;
+
+async function searchPlaces(text, count = 8){
+  const main = (await get('geocoding-api', 'search', {name: text, count, language: 'de'})).results || [];
+  const want = plainName(text);
+  if (main.some(p => plainName(p.name).startsWith(want))) return main;
+  let extra = [];
+  try {
+    const res = await fetch('https://photon.komoot.io/api/?' + new URLSearchParams({q: text, lang: 'de', limit: 12}));
+    if (res.ok) extra = ((await res.json()).features || [])
+      .filter(f => f.properties?.name && PHOTON_KEEP.test(`${f.properties.osm_key}:${f.properties.osm_value}`))
+      .map(f => ({name: f.properties.name, latitude: f.geometry.coordinates[1], longitude: f.geometry.coordinates[0], admin2: f.properties.county, admin1: f.properties.state, country: f.properties.country, country_code: (f.properties.countrycode || '').toUpperCase()}));
+  } catch {}
+  // Denselben Ort nicht doppelt zeigen (gleicher Name, weniger als 8 km entfernt).
+  const all = [...main];
+  for (const p of extra) if (!all.some(q => plainName(q.name) === plainName(p.name) && km({lat: q.latitude, lon: q.longitude}, {lat: p.latitude, lon: p.longitude}) < 8)) all.push(p);
+  return all.slice(0, count + 4);
+}
+
+// Photon liefert keine Zeitzone; die holt sich die App einmal vom Wetterdienst.
+async function withTimezone(p){
+  if (p.timezone) return p;
+  try { return {...p, timezone: (await get('api', 'forecast', {latitude: p.latitude, longitude: p.longitude, timezone: 'auto', forecast_days: 1, current: 'temperature_2m'})).timezone} }
+  catch { return p }
+}
+
 // Open-Meteo fehlen viele PLZ. Für DE, AT und CH wird daher zusätzlich Zippopotam gefragt.
 const POSTAL = [
   {cc: 'de', digits: 5, country: 'Deutschland', timezone: 'Europe/Berlin', box: [47.2, 55.1, 5.8, 15.1]},
@@ -1276,11 +1335,16 @@ $('#q').oninput = () => {
       const zip = /^\d{4,5}$/.test(text) ? await postal(text) : {places: [], failed: false};
       if (t !== searchNo) return;
       // Nur wenn die PLZ-Quelle nichts liefert, gilt die allgemeine Suche.
-      const found = zip.places.length ? zip.places : (await get('geocoding-api', 'search', {name: text, count: 8, language: 'de'})).results || [];
+      const found = zip.places.length ? zip.places : await searchPlaces(text);
       if (t !== searchNo) return;
       if (!found.length && zip.failed) throw Error('Die PLZ-Suche ist gerade nicht erreichbar. Bitte später erneut versuchen.');
       box.innerHTML = found.length ? found.map(p => `<button>${esc(p.name)} <small>${esc([p.admin2, p.admin1, p.country].filter(Boolean).join(', '))}</small></button>`).join('') : '<p class="msg">Kein Ort gefunden.</p>';
-      box.querySelectorAll('button').forEach((b, i) => b.onclick = () => choose(found[i]));
+      box.querySelectorAll('button').forEach((b, i) => b.onclick = async () => {
+        const p = await withTimezone(found[i]);
+        // Im Reiter Urlaub sucht das obere Feld das Reiseziel, der Heimatort bleibt.
+        if (view === 'trips') { $('#q').value = ''; box.innerHTML = ''; tripPick(p); loadTrip() }
+        else choose(p);
+      });
     } catch (e) { if (t === searchNo) box.textContent = e.message }
   }, 300);
 };
@@ -1292,6 +1356,7 @@ document.addEventListener('click', e => { if (!e.target.closest('.search')) $('#
 
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { view = b.dataset.v; scrollTo(0, 0); show() } };
 $('#viewSelect').onchange = e => { view = e.target.value; scrollTo(0, 0); show() };
+$('#backOverview').onclick = () => { view = 'overview'; scrollTo(0, 0); show() };
 $('#horizon').onchange = loadForecast;
 $('#preset').onchange = () => { setPreset(); if ($('#preset').value) loadHistory(); else $('#from').focus() };
 $('#from').oninput = $('#to').oninput = () => { $('#preset').value = '' };
