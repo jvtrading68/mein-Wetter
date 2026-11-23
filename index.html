@@ -256,6 +256,15 @@ body[data-wx="storm"] #scene .bolt{animation:flash 9s linear infinite;opacity:0}
   #scene .sun{left:auto;right:-150px;top:calc(var(--head,190px) + 40px);margin:-210px 0 0 0}
   #scene .moon{left:auto;right:18px;top:calc(var(--head,190px) + 30px);margin:0}
 }@media (prefers-reduced-motion:reduce){#scene *,#scene *::after{animation:none!important}}
+#viewSelect,.favSelect{display:none}
+@media(max-width:760px){
+  #tabs button,#favs [data-i]{display:none}
+  #viewSelect,.favSelect{display:block}
+  #favs{flex-wrap:nowrap}
+  .favSelect{flex:1 1 auto;min-width:0}
+  #viewSelect{width:100%;font-weight:600}
+  #head nav{overflow:visible}
+}
 </style>
 </head>
 <body>
@@ -272,6 +281,7 @@ body[data-wx="storm"] #scene .bolt{animation:flash 9s linear infinite;opacity:0}
     <button data-v="months">Monatsvergleich</button>
     <button data-v="years">Jahresvergleich</button>
     <button data-v="trips">Urlaub</button>
+    <select id="viewSelect" aria-label="Ansicht wählen"><option value="forecast">Vorhersage</option><option value="history">Rückblick</option><option value="months">Monatsvergleich</option><option value="years">Jahresvergleich</option><option value="trips">Urlaub</option></select>
   </nav>
 </div></header>
 <main>
@@ -1039,6 +1049,7 @@ function initTrips(){
 function show(){
   document.querySelectorAll('section').forEach(s => s.hidden = s.id !== view);
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === view));
+  $('#viewSelect').value = view;
   return {forecast: loadForecast, history: loadHistory, months: loadMonths, years: loadYears, trips: () => tripPlace ? loadTrip() : null}[view]();
 }
 
@@ -1154,12 +1165,15 @@ function header(){
   $('#place').textContent = place.name;
   $('#region').textContent = [place.admin2, place.admin1, place.country].filter((v, i, a) => v && a.indexOf(v) === i).join(', ');
   const saved = favs.some(p => id(p) === id(place));
-  $('#favs').innerHTML = `<button id="star">${saved ? '★ Gespeichert' : '☆ Ort merken'}</button>` + favs.map((p, i) => `<button data-i="${i}" class="${id(p) === id(place) ? 'on' : ''}">${armsOf(p) ? `<img class="favArms" src="${armsOf(p)}" alt="">` : ''}${esc(p.name)}</button>`).join('');
+  $('#favs').innerHTML = `<button id="star">${saved ? '★ Gespeichert' : '☆ Ort merken'}</button>` + favs.map((p, i) => `<button data-i="${i}" class="${id(p) === id(place) ? 'on' : ''}">${armsOf(p) ? `<img class="favArms" src="${armsOf(p)}" alt="">` : ''}${esc(p.name)}</button>`).join('')
+    + (favs.length ? `<select class="favSelect" aria-label="Gespeicherten Ort wählen"><option value="">Gespeicherte Orte</option>${favs.map((p, i) => `<option value="${i}" ${id(p) === id(place) ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : '');
   $('#star').onclick = () => {
     favs = saved ? favs.filter(p => id(p) !== id(place)) : [...favs, place];
     store.set('favs', favs); header();
   };
   $('#favs').querySelectorAll('[data-i]').forEach(b => b.onclick = () => choose(favs[+b.dataset.i]));
+  const pickFav = $('#favs .favSelect');
+  if (pickFav) pickFav.onchange = () => { if (pickFav.value !== '') choose(favs[+pickFav.value]) };
   [place, ...favs].forEach(wikiFor);
 }
 
@@ -1220,6 +1234,7 @@ $('#q').onkeydown = e => {
 document.addEventListener('click', e => { if (!e.target.closest('.search')) $('#results').innerHTML = '' });
 
 $('#tabs').onclick = e => { const b = e.target.closest('button'); if (b) { view = b.dataset.v; scrollTo(0, 0); show() } };
+$('#viewSelect').onchange = e => { view = e.target.value; scrollTo(0, 0); show() };
 $('#horizon').onchange = loadForecast;
 $('#preset').onchange = () => { setPreset(); if ($('#preset').value) loadHistory(); else $('#from').focus() };
 $('#from').oninput = $('#to').oninput = () => { $('#preset').value = '' };
