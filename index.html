@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0d141d">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -295,6 +295,11 @@ body[data-wx="storm"] #scene .bolt{animation:flash 9s linear infinite;opacity:0}
 @media(max-width:760px){.overview{grid-template-columns:minmax(0,1fr)}.ovTemp{font-size:40px}}
 #backOverview{font-weight:600}
 .tripSearch{display:none!important}
+/* iOS zoomt automatisch in Eingabefelder unter 16 px Schrift; danach ließ sich die Seite seitlich verschieben. */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+@media(max-width:760px){input,select,textarea{font-size:16px}}
+/* Hinweis auf neue Version */
+#updateBar{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:50;background:#fab219;color:#0b0b0b;border:0;border-radius:24px;padding:12px 20px;font-weight:600;box-shadow:0 8px 24px #0008;max-width:calc(100% - 32px)}
 </style>
 </head>
 <body>
@@ -1370,6 +1375,28 @@ $('#month').value = +shift(today(), -1).slice(5, 7);
 $('#month').onchange = $('#monthSpan').onchange = $('#monthRange').onchange = loadMonths;
 
 initTrips();
+
+// Versionskennung: bei jedem Update erhöhen, damit installierte Apps den Hinweis „Neue Version verfügbar“ zeigen.
+const APP_VERSION = '2026-11-23.1';
+let lastUpdateCheck = 0;
+function checkUpdate(){
+  if (!/^https?:$/.test(location.protocol) || Date.now() - lastUpdateCheck < 6e4 || $('#updateBar')) return;
+  lastUpdateCheck = Date.now();
+  fetch(location.pathname + '?check=' + Date.now(), {cache: 'no-store'})
+    .then(r => r.ok ? r.text() : '')
+    .then(text => {
+      const online = text.match(/const APP_VERSION = '([^']+)'/)?.[1];
+      if (!online || online === APP_VERSION || $('#updateBar')) return;
+      const bar = Object.assign(document.createElement('button'), {id: 'updateBar', textContent: 'Neue Version verfügbar – tippen zum Aktualisieren'});
+      // Neue Adresse umgeht den Zwischenspeicher von Gerät und GitHub.
+      bar.onclick = () => location.replace(location.pathname + '?v=' + encodeURIComponent(online));
+      document.body.append(bar);
+    })
+    .catch(() => {});
+}
+setTimeout(checkUpdate, 3000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate() });
+setInterval(checkUpdate, 18e5);
 
 const head = $('#head');
 new ResizeObserver(() => document.documentElement.style.setProperty('--head', head.offsetHeight + 'px')).observe(head);
