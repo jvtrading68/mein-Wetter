@@ -174,9 +174,92 @@ html{scroll-padding-top:var(--head,0px)}
 .tripChip{display:inline-flex}
 .tripChip button{border-radius:12px 0 0 12px}
 .tripChip .x{border-radius:0 12px 12px 0;border-left:0;padding:7px 10px}
+/* Wetter-Szene im Hintergrund: gezeichnet, je nach Wetterlage und Tageszeit */
+html{background:var(--bg)}
+body{background:transparent!important}
+#scene{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none;background:var(--bg)}
+#scene>*{position:absolute;opacity:0;transition:opacity 1.2s ease}
+#scene .sky{inset:0;opacity:1;background:linear-gradient(180deg,#1b2b40 0%,#24384e 40%,#0d141d 100%)}
+#scene .shade{inset:0;opacity:1;background:linear-gradient(180deg,transparent 0%,transparent 45%,#0d141dd9 85%,#0d141d 100%)}
+/* Sonne mit langsam drehenden Strahlen */
+#scene .sun{top:40px;right:9%;width:420px;height:420px;margin:-150px -150px 0 0;border-radius:50%;
+  background:radial-gradient(circle at 50% 50%,#fff8d6 0 46px,#ffd25e 52px,#ffbe3b66 70px,#ffb34722 130px,transparent 210px)}
+#scene .sun::after{content:"";position:absolute;inset:0;border-radius:50%;opacity:.35;
+  background:repeating-conic-gradient(from 0deg,#ffe9a8 0deg 4deg,transparent 4deg 18deg);
+  -webkit-mask:radial-gradient(circle,transparent 70px,#000 80px,transparent 200px);mask:radial-gradient(circle,transparent 70px,#000 80px,transparent 200px);
+  animation:spin 90s linear infinite}
+/* Mond und Sterne */
+#scene .moon{top:70px;right:12%;width:74px;height:74px;border-radius:50%;background:#f1efe3;
+  box-shadow:inset -18px -6px 0 0 #c9c6b6,0 0 40px 10px #f1efe322,0 0 120px 40px #9fb6ff14}
+#scene .stars,#scene .stars2{inset:0 0 40% 0;
+  background-image:radial-gradient(1.2px 1.2px at 20px 30px,#fff,transparent),radial-gradient(1px 1px at 90px 80px,#fff,transparent),radial-gradient(1.5px 1.5px at 160px 20px,#fff,transparent),radial-gradient(1px 1px at 230px 120px,#dfe8ff,transparent),radial-gradient(1.3px 1.3px at 300px 60px,#fff,transparent);
+  background-size:330px 160px}
+#scene .stars2{background-size:470px 220px;background-position:120px 40px;animation:twinkle 4.5s ease-in-out infinite alternate}
+/* Ziehende Wolken (zwei Ebenen, nahtlos wiederholt) */
+#scene .clouds,#scene .clouds2{top:-4%;left:0;width:200%;height:58%;filter:blur(10px);background-repeat:repeat-x;background-size:50% 100%;will-change:transform}
+#scene .clouds{background-image:radial-gradient(ellipse 22% 26% at 12% 28%,var(--cloud) 0 40%,transparent 72%),radial-gradient(ellipse 18% 20% at 36% 18%,var(--cloud) 0 40%,transparent 72%),radial-gradient(ellipse 26% 24% at 63% 34%,var(--cloud) 0 40%,transparent 72%),radial-gradient(ellipse 16% 18% at 88% 22%,var(--cloud) 0 40%,transparent 72%);animation:drift 140s linear infinite}
+#scene .clouds2{top:6%;opacity:0;background-image:radial-gradient(ellipse 20% 22% at 22% 40%,var(--cloud2) 0 40%,transparent 72%),radial-gradient(ellipse 24% 20% at 52% 50%,var(--cloud2) 0 40%,transparent 72%),radial-gradient(ellipse 18% 24% at 80% 38%,var(--cloud2) 0 40%,transparent 72%);animation:drift 90s linear infinite reverse}
+/* Regen und Schnee: Kacheln, die nach unten wandern */
+#scene .rain,#scene .rain2{left:-10%;width:120%;top:-180px;height:calc(100% + 180px);transform:skewX(-10deg)}
+#scene .rain{background-image:radial-gradient(1px 16px at 50% 50%,#c4d8f2aa,transparent),radial-gradient(1px 12px at 20% 20%,#c4d8f288,transparent);background-size:37px 90px,61px 90px;animation:fall .55s linear infinite}
+#scene .rain2{background-image:radial-gradient(1px 22px at 50% 50%,#d6e6fbcc,transparent);background-size:83px 180px;animation:fall2 .7s linear infinite}
+#scene .snow,#scene .snow2{left:0;width:100%;top:-240px;height:calc(100% + 240px)}
+#scene .snow{background-image:radial-gradient(circle 2.6px at 50% 50%,#fff 55%,transparent),radial-gradient(circle 1.8px at 15% 70%,#eef4ff 55%,transparent);background-size:90px 120px,57px 120px;animation:snowfall 9s linear infinite}
+#scene .snow2{background-image:radial-gradient(circle 3.4px at 40% 30%,#fff 55%,transparent);background-size:140px 240px;animation:snowfall2 14s linear infinite}
+/* Nebel und Blitz */
+#scene .fog{inset:20% -20% 0 -20%;filter:blur(18px);background:repeating-linear-gradient(180deg,transparent 0 60px,#c9d1d966 90px,transparent 140px);animation:mist 30s ease-in-out infinite alternate}
+#scene .flash{inset:0;background:#e8ecff;opacity:0}
+#scene .bolt{top:4%;right:22%;width:120px;height:46%}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes twinkle{from{opacity:.35}to{opacity:1}}
+@keyframes drift{to{transform:translateX(-50%)}}
+@keyframes fall{to{transform:skewX(-10deg) translateY(90px)}}
+@keyframes fall2{to{transform:skewX(-10deg) translateY(180px)}}
+@keyframes snowfall{to{transform:translate(20px,120px)}}
+@keyframes snowfall2{to{transform:translate(-30px,240px)}}
+@keyframes mist{to{transform:translateX(8%)}}
+@keyframes flash{0%,88%,91%,94%,100%{opacity:0}89%{opacity:.55}92.5%{opacity:.35}}
+/* Sichtbarkeit je Wetterlage (data-wx) und Tageszeit (data-tod) */
+body[data-tod="day"][data-wx="clear"] #scene .sky{background:linear-gradient(180deg,#1b5a96 0%,#2f78b8 42%,#17324f 100%)}
+body[data-tod="day"][data-wx="partly"] #scene .sky{background:linear-gradient(180deg,#24609a 0%,#3a7cb4 42%,#18324c 100%)}
+body[data-wx="cloud"] #scene .sky{background:linear-gradient(180deg,#3b4a5a 0%,#4a5968 42%,#151d27 100%)}
+body[data-wx="fog"] #scene .sky{background:linear-gradient(180deg,#59626b 0%,#4b545d 45%,#151b22 100%)}
+body[data-wx="rain"] #scene .sky{background:linear-gradient(180deg,#26313d 0%,#334252 42%,#10161e 100%)}
+body[data-wx="snow"] #scene .sky{background:linear-gradient(180deg,#4a6077 0%,#5b7188 42%,#18222d 100%)}
+body[data-wx="storm"] #scene .sky{background:linear-gradient(180deg,#14111f 0%,#251f36 42%,#0b0a12 100%)}
+body[data-tod="night"] #scene .sky{background:linear-gradient(180deg,#060b20 0%,#121a3d 45%,#080b14 100%)}
+body[data-tod="night"][data-wx="cloud"] #scene .sky,body[data-tod="night"][data-wx="rain"] #scene .sky,body[data-tod="night"][data-wx="fog"] #scene .sky{background:linear-gradient(180deg,#141a24 0%,#1f2733 45%,#090c11 100%)}
+body[data-tod="day"][data-wx="clear"] #scene .sun,body[data-tod="day"][data-wx="partly"] #scene .sun{opacity:1}
+body[data-tod="night"][data-wx="clear"] #scene .moon,body[data-tod="night"][data-wx="partly"] #scene .moon{opacity:1}
+body[data-tod="night"][data-wx="clear"] #scene .stars,body[data-tod="night"][data-wx="clear"] #scene .stars2{opacity:1}
+body[data-tod="night"][data-wx="partly"] #scene .stars{opacity:.6}
+body[data-wx="partly"]{--cloud:#ffffffd9;--cloud2:#ffffffb3}
+body[data-wx="cloud"]{--cloud:#aeb8c3d0;--cloud2:#8a96a3c0}
+body[data-wx="fog"]{--cloud:#b9c1c9a0;--cloud2:#9aa3ad90}
+body[data-wx="rain"]{--cloud:#56606ee6;--cloud2:#424b58d9}
+body[data-wx="snow"]{--cloud:#c3ccd6d9;--cloud2:#a7b2bfc8}
+body[data-wx="storm"]{--cloud:#2c2838f2;--cloud2:#1d1a27e6}
+body[data-tod="night"][data-wx="partly"]{--cloud:#5b6577b3;--cloud2:#47506099}
+body[data-wx="partly"] #scene .clouds,body[data-wx="cloud"] #scene .clouds,body[data-wx="cloud"] #scene .clouds2,body[data-wx="fog"] #scene .clouds,body[data-wx="rain"] #scene .clouds,body[data-wx="rain"] #scene .clouds2,body[data-wx="snow"] #scene .clouds,body[data-wx="snow"] #scene .clouds2,body[data-wx="storm"] #scene .clouds,body[data-wx="storm"] #scene .clouds2{opacity:1}
+body[data-wx="rain"] #scene .rain,body[data-wx="rain"] #scene .rain2,body[data-wx="storm"] #scene .rain,body[data-wx="storm"] #scene .rain2{opacity:1}
+body[data-wx="snow"] #scene .snow,body[data-wx="snow"] #scene .snow2{opacity:1}
+body[data-wx="fog"] #scene .fog{opacity:1}
+body[data-wx="storm"] #scene .flash{animation:flash 9s linear infinite}
+body[data-wx="storm"] #scene .bolt{animation:flash 9s linear infinite;opacity:0}
+/* Lesbarkeit über hellem Himmel */
+#head{background:#0a101899!important;-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2)}
+.hero,.hero .temp,#head h1,#head small,#tabs button,.bar>small{text-shadow:0 1px 3px #0009,0 0 18px #0005}
+/* Sonne und Mond unterhalb der Kopfzeile: am PC zwischen Temperatur und Infokacheln, am Handy rechts am Rand */
+#scene .sun{top:calc(var(--head,190px) + 110px);left:46%;right:auto;margin:-210px 0 0 -210px}
+#scene .moon{top:calc(var(--head,190px) + 70px);left:46%;right:auto;margin:-37px 0 0 -37px}
+@media(max-width:760px){
+  #scene .sun{left:auto;right:-150px;top:calc(var(--head,190px) + 40px);margin:-210px 0 0 0}
+  #scene .moon{left:auto;right:18px;top:calc(var(--head,190px) + 30px);margin:0}
+}@media (prefers-reduced-motion:reduce){#scene *,#scene *::after{animation:none!important}}
 </style>
 </head>
 <body>
+<div id="scene" aria-hidden="true"><div class="sky"></div><div class="stars"></div><div class="stars2"></div><div class="sun"></div><div class="moon"></div><div class="clouds"></div><div class="clouds2"></div><div class="fog"></div><div class="rain"></div><div class="rain2"></div><div class="snow"></div><div class="snow2"></div><svg class="bolt" viewBox="0 0 60 200" preserveAspectRatio="xMidYMin meet"><path d="M36 0 16 88 31 90 10 200 48 76 32 74 46 0Z" fill="#fff6c8"/></svg><div class="flash"></div><div class="shade"></div></div>
 <header id="head"><div class="headInner">
   <div class="top">
     <div class="placeName"><img id="arms" alt="" hidden><div><h1 id="place"></h1><small id="region"></small></div></div>
@@ -309,10 +392,11 @@ const table = (head, rows) => `<details><summary>Alle Werte als Tabelle</summary
 // Der Himmel bleibt in jeder Wetterlage dunkel genug für weiße Schrift.
 const SKY = {day:['#175a96','#1f5680'], night:['#080f2b','#1b2350'], cloud:['#34495e','#3b4d5f'], cloudNight:['#161d29','#263140'], fog:['#48515a','#3c454e'], rain:['#1c3548','#284b60'], snow:['#3b5877','#3d566e'], storm:['#24183d','#3a2b55']};
 function sky(code, isDay){
-  const kind = code >= 95 ? 'storm' : (code >= 71 && code <= 77) || code === 85 || code === 86 ? 'snow' : code >= 51 ? 'rain' : code >= 45 ? 'fog' : code === 3 ? (isDay ? 'cloud' : 'cloudNight') : isDay ? 'day' : 'night';
-  document.body.style.setProperty('--top', SKY[kind][0]);
-  document.body.style.setProperty('--mid', SKY[kind][1]);
-  return kind;
+  // Wetterlage für die Hintergrund-Szene (siehe #scene im Stil)
+  const wx = code == null ? 'cloud' : code >= 95 ? 'storm' : (code >= 71 && code <= 77) || code === 85 || code === 86 ? 'snow' : code >= 51 ? 'rain' : code >= 45 ? 'fog' : code === 3 ? 'cloud' : code >= 1 ? 'partly' : 'clear';
+  document.body.dataset.wx = wx;
+  document.body.dataset.tod = isDay ? 'day' : 'night';
+  return wx;
 }
 const icon = (code, isDay = 1) => !isDay && code != null && code < 3 ? (code === 2 ? '☁️' : '🌙') : weather(code)[0];
 
