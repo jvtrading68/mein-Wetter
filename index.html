@@ -265,6 +265,28 @@ body[data-wx="storm"] #scene .bolt{animation:flash 9s linear infinite;opacity:0}
   #viewSelect{width:100%;font-weight:600}
   #head nav{overflow:visible}
 }
+.overview{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin:6px 0 14px}
+.ovCard{display:flex;justify-content:space-between;align-items:stretch;gap:12px;text-align:left;padding:16px 18px;border-radius:20px;border:1px solid var(--line);min-height:118px;color:#fff;text-shadow:0 1px 3px #0008;background:linear-gradient(135deg,#34495e,#1e2b38)}
+.ovCard:hover{border-color:#ffffff90;transform:translateY(-1px)}
+.ovLeft{display:flex;gap:12px;align-items:flex-start;min-width:0}
+.ovLeft img{height:44px;width:auto;flex:none;filter:drop-shadow(0 2px 3px #0006)}
+.ovLeft>span{display:flex;flex-direction:column;min-width:0}
+.ovName{font-size:20px;line-height:1.2}
+.ovLeft small,.ovRight small{color:#e6ecf2;font-size:12px}
+.ovWx{margin-top:auto;padding-top:8px;font-size:14px}
+.ovWx .emoji{margin-right:6px}
+.ovRight{display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;flex:none}
+.ovTemp{font-size:46px;font-weight:300;line-height:1}
+.ovCard[data-tod="day"][data-wx="clear"]{background:linear-gradient(135deg,#2f86d1,#175a96)}
+.ovCard[data-tod="day"][data-wx="partly"]{background:linear-gradient(135deg,#4c8fc6,#24609a)}
+.ovCard[data-wx="cloud"]{background:linear-gradient(135deg,#66737f,#3b4a5a)}
+.ovCard[data-wx="fog"]{background:linear-gradient(135deg,#7a838b,#4b545d)}
+.ovCard[data-wx="rain"]{background:linear-gradient(135deg,#46576a,#26313d)}
+.ovCard[data-wx="snow"]{background:linear-gradient(135deg,#7d93a8,#4a6077)}
+.ovCard[data-wx="storm"]{background:linear-gradient(135deg,#3b2f55,#14111f)}
+.ovCard[data-tod="night"]{background:linear-gradient(135deg,#1c2652,#070c22)}
+.ovCard[data-tod="night"][data-wx="rain"],.ovCard[data-tod="night"][data-wx="cloud"],.ovCard[data-tod="night"][data-wx="fog"]{background:linear-gradient(135deg,#2a3340,#10151c)}
+@media(max-width:760px){.overview{grid-template-columns:minmax(0,1fr)}.ovTemp{font-size:40px}}
 </style>
 </head>
 <body>
@@ -276,15 +298,18 @@ body[data-wx="storm"] #scene .bolt{animation:flash 9s linear infinite;opacity:0}
   </div>
   <div class="bar" id="favs"></div>
   <nav id="tabs">
-    <button data-v="forecast" class="on">Vorhersage</button>
+    <button data-v="overview">Übersicht</button>
+    <button data-v="forecast">Vorhersage</button>
     <button data-v="history">Rückblick</button>
     <button data-v="months">Monatsvergleich</button>
     <button data-v="years">Jahresvergleich</button>
     <button data-v="trips">Urlaub</button>
-    <select id="viewSelect" aria-label="Ansicht wählen"><option value="forecast">Vorhersage</option><option value="history">Rückblick</option><option value="months">Monatsvergleich</option><option value="years">Jahresvergleich</option><option value="trips">Urlaub</option></select>
+    <select id="viewSelect" aria-label="Ansicht wählen"><option value="overview">Übersicht</option><option value="forecast">Vorhersage</option><option value="history">Rückblick</option><option value="months">Monatsvergleich</option><option value="years">Jahresvergleich</option><option value="trips">Urlaub</option></select>
   </nav>
 </div></header>
 <main>
+
+  <section id="overview" hidden><div class="out"></div></section>
 
   <section id="forecast">
     <div class="bar"><select id="horizon" aria-label="Anzahl Tage"><option value="7">7 Tage</option><option value="10">10 Tage</option><option value="16">16 Tage</option></select><small class="soft">Tag anklicken für den Stundenverlauf. Ab etwa Tag 7 ist es nur noch ein Trend.</small></div>
@@ -353,7 +378,7 @@ const low = a => valid(a).length ? Math.min(...valid(a)) : null;
 
 let place = store.get('place', {name: 'Berlin', latitude: 52.52437, longitude: 13.41053, timezone: 'Europe/Berlin', admin1: 'Berlin', country: 'Deutschland'});
 let favs = store.get('favs', []);
-let view = 'forecast', forecastData, selected, exported = [];
+let view = favs.length ? 'overview' : 'forecast', forecastData, selected, exported = [];
 const tickets = {}, memory = new Map();
 const today = () => new Intl.DateTimeFormat('en-CA', {timeZone: place.timezone || 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit'}).format(new Date());
 const id = p => p.latitude + ',' + p.longitude;
@@ -1046,11 +1071,40 @@ function initTrips(){
   tripHeader();
 }
 
+// Übersicht: alle gespeicherten Orte mit aktuellem Wetter, in einem einzigen Abruf.
+const wxOf = code => code == null ? 'cloud' : code >= 95 ? 'storm' : (code >= 71 && code <= 77) || code === 85 || code === 86 ? 'snow' : code >= 51 ? 'rain' : code >= 45 ? 'fog' : code === 3 ? 'cloud' : code >= 1 ? 'partly' : 'clear';
+
+function loadOverview(){
+  return run('overview', async (out, live) => {
+    if (!favs.length) {
+      out.innerHTML = '<p class="msg">Noch keine Orte gespeichert. Such oben einen Ort und tippe auf „☆ Ort merken“. Gespeicherte Orte erscheinen dann hier mit ihrem aktuellen Wetter.</p>';
+      return;
+    }
+    const list = [...favs];
+    const data = await get('api', 'forecast', {
+      latitude: list.map(p => p.latitude).join(','), longitude: list.map(p => p.longitude).join(','), timezone: 'auto', forecast_days: 1,
+      current: 'temperature_2m,apparent_temperature,weather_code,is_day',
+      daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum'
+    });
+    if (!live()) return;
+    const rows = Array.isArray(data) ? data : [data];
+    out.innerHTML = `<div class="overview">${list.map((p, i) => {
+      const r = rows[i], c = r?.current || {}, d = r?.daily || {}, coat = armsOf(p);
+      const time = c.time ? c.time.slice(11, 16) : '';
+      return `<button class="ovCard" data-o="${i}" data-wx="${wxOf(c.weather_code)}" data-tod="${c.is_day ? 'day' : 'night'}">
+        <span class="ovLeft">${coat ? `<img src="${coat}" alt="">` : ''}<span><b class="ovName">${esc(p.name)}</b><small>${esc([p.admin1, p.country].filter((v, k, a) => v && a.indexOf(v) === k).join(', '))}${time ? ` · ${time} Uhr` : ''}</small><span class="ovWx"><i class="emoji">${icon(c.weather_code, c.is_day)}</i>${weather(c.weather_code)[1]}</span></span></span>
+        <span class="ovRight"><span class="ovTemp">${num(c.temperature_2m, 0)}°</span><small>H: ${num(d.temperature_2m_max?.[0], 0)}° · T: ${num(d.temperature_2m_min?.[0], 0)}°</small><small>${d.precipitation_probability_max?.[0] != null ? `&#128167; ${d.precipitation_probability_max[0]} %` : ''}</small></span>
+      </button>`;
+    }).join('')}</div><p class="soft">Antippen öffnet die Vorhersage für den Ort. Die Werte werden beim Öffnen der Übersicht aktualisiert.</p>`;
+    out.querySelectorAll('.ovCard').forEach(b => b.onclick = () => { view = 'forecast'; choose(list[+b.dataset.o]) });
+  });
+}
+
 function show(){
   document.querySelectorAll('section').forEach(s => s.hidden = s.id !== view);
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === view));
   $('#viewSelect').value = view;
-  return {forecast: loadForecast, history: loadHistory, months: loadMonths, years: loadYears, trips: () => tripPlace ? loadTrip() : null}[view]();
+  return {overview: loadOverview, forecast: loadForecast, history: loadHistory, months: loadMonths, years: loadYears, trips: () => tripPlace ? loadTrip() : null}[view]();
 }
 
 function choose(p){
@@ -1131,6 +1185,8 @@ function wikiFor(p){
     store.set(key, info);
     if (id(p) === id(place)) { header(); wikiFill() }
     else if (favs.some(f => id(f) === id(p))) header();
+    // Neu geladene Wappen auch auf den Karten der Übersicht zeigen (Wetterdaten kommen aus dem Zwischenspeicher).
+    if (view === 'overview' && favs.some(f => id(f) === id(p))) loadOverview();
   }).catch(() => { wikiPause = Date.now() + 6e5 }).finally(() => wikiLoading.delete(key));
   wikiLoading.set(key, job);
   wikiQueue = job.then(() => new Promise(done => setTimeout(done, 400)));
@@ -1170,6 +1226,7 @@ function header(){
   $('#star').onclick = () => {
     favs = saved ? favs.filter(p => id(p) !== id(place)) : [...favs, place];
     store.set('favs', favs); header();
+    if (view === 'overview') loadOverview();
   };
   $('#favs').querySelectorAll('[data-i]').forEach(b => b.onclick = () => choose(favs[+b.dataset.i]));
   const pickFav = $('#favs .favSelect');
