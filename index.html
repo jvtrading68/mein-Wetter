@@ -167,6 +167,13 @@ html{scroll-padding-top:var(--head,0px)}
 .dline .emoji{font-size:13px;margin-right:4px;display:inline-block;width:16px;text-align:center}
 .dline .sep{color:var(--muted);padding:0 2px}
 .dline .dry,.dline.none{color:var(--muted)}
+.tripBar{margin-bottom:10px;gap:12px}
+.tripBar label{display:flex;align-items:center;gap:6px;color:var(--soft)}
+#tripResults{position:absolute;z-index:3;left:0;right:0;top:42px;background:var(--card);border-radius:12px;box-shadow:0 8px 24px #0003;max-height:60vh;overflow-y:auto}
+#tripResults button{display:block;width:100%;text-align:left;border:0;border-radius:0}
+.tripChip{display:inline-flex}
+.tripChip button{border-radius:12px 0 0 12px}
+.tripChip .x{border-radius:0 12px 12px 0;border-left:0;padding:7px 10px}
 </style>
 </head>
 <body>
@@ -181,6 +188,7 @@ html{scroll-padding-top:var(--head,0px)}
     <button data-v="history">Rückblick</button>
     <button data-v="months">Monatsvergleich</button>
     <button data-v="years">Jahresvergleich</button>
+    <button data-v="trips">Urlaub</button>
   </nav>
 </div></header>
 <main>
@@ -211,6 +219,23 @@ html{scroll-padding-top:var(--head,0px)}
   <section id="years" hidden>
     <div class="bar"><select id="season" aria-label="Monat oder Saison"></select><select id="span" aria-label="Anzahl Jahre"><option value="10">10 Jahre</option><option value="30" selected>30 Jahre</option><option value="0">Alle seit 1940</option></select></div>
     <div class="out"></div>
+  </section>
+
+    <section id="trips" hidden>
+    <div class="bar tripBar">
+      <div class="search tripSearch"><input id="tripQ" placeholder="Urlaubsort suchen, z. B. Mallorca oder Garmisch …" aria-label="Urlaubsort suchen" autocomplete="off"><div id="tripResults"></div></div>
+      <span id="tripWhere"></span>
+    </div>
+    <div class="bar tripBar" id="tripFavs"></div>
+    <div class="bar tripBar">
+      <label>Anreise <input id="tripFrom" type="date"></label>
+      <label>Abreise <input id="tripTo" type="date"></label>
+      <select id="tripSpan" aria-label="Vergleichsjahre"><option value="10" selected>Letzte 10 Jahre</option><option value="20">Letzte 20 Jahre</option><option value="30">Letzte 30 Jahre</option></select>
+      <button id="tripGo">Auswerten</button>
+      <button id="tripSaveBtn">&#9734; Reise merken</button>
+    </div>
+    <div class="bar" id="tripSaved"></div>
+    <div class="out"><p class="msg">Such dir oben einen Urlaubsort, wähle den Reisezeitraum und klicke auf „Auswerten“.</p></div>
   </section>
 
   <footer>Wetterdaten: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a> (CC BY 4.0), Copernicus ERA5, ECMWF. Ortsfotos, Wappen und Beschreibungen: Wikipedia, Wikidata und Wikimedia Commons (Urheber jeweils am Bild). Postleitzahlen: <a href="https://zippopotam.us/" target="_blank" rel="noopener">Zippopotam</a> / GeoNames. Vergangene Werte sind Modellrechnungen aus Messdaten, keine Messung direkt am Ort. Niederschlag, Schnee und Wind können besonders in Tälern und Bergen stark abweichen. Markierungen: Schnee ab 0,5 cm am Tag, Frost unter 0 °C, Sturmböen ab 65 km/h. Sie ersetzen keine amtliche Wetterwarnung. Sonnenstunden sind aus Bewölkung und Strahlung berechnet und liegen oft deutlich über gemessenen Werten (in Berlin etwa um die Hälfte). Für den Vergleich zwischen Jahren oder Monaten taugen sie besser als für absolute Zahlen.</footer>
@@ -765,10 +790,172 @@ function renderMonths(out, data, info){
   };
 }
 
+// Urlaub: übliches Wetter am Reiseziel für den gewählten Zeitraum, aus den Vorjahren berechnet.
+let tripPlace = store.get('tripPlace', null), trips = store.get('trips', []), tripFavs = store.get('tripFavs', []), tripSearchNo = 0, tripTimer;
+const TRIP_DAILY = 'temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,snowfall_sum,sunshine_duration,wind_speed_10m_max,daylight_duration,sunrise,sunset';
+const isLeap = y => new Date(Date.UTC(y, 1, 29)).getUTCMonth() === 1;
+const tripDay = s => day(s, {day: '2-digit', month: '2-digit'});
+const tripId = t => `${id(t.place)}|${t.from.slice(5)}|${t.to.slice(5)}`;
+
+async function pool(items, limit, work){
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({length: Math.min(limit, items.length)}, async () => {
+    while (next < items.length) { const i = next++; out[i] = await work(items[i], i) }
+  }));
+  return out;
+}
+
+function tripPeriod(){
+  const from = $('#tripFrom').value, to = $('#tripTo').value;
+  if (!tripPlace) throw Error('Bitte zuerst einen Urlaubsort suchen und auswählen.');
+  if (!from || !to) throw Error('Bitte Anreise und Abreise eingeben.');
+  const days = Math.round((Date.parse(to) - Date.parse(from)) / 864e5) + 1;
+  if (days < 1) throw Error('Die Abreise liegt vor der Anreise.');
+  if (days > 60) throw Error('Bitte höchstens 60 Tage wählen.');
+  return {from, to, days};
+}
+
+// Gleicher Kalenderzeitraum in den Vorjahren. Ein 29. Februar wird in Nicht-Schaltjahren zum 1. März.
+function tripYears(from, days, count){
+  const limit = shift(today(), -7), list = [];
+  for (let y = +today().slice(0, 4); y >= 1950 && list.length < count; y--) {
+    let start = `${y}${from.slice(4)}`;
+    if (from.slice(5) === '02-29' && !isLeap(y)) start = `${y}-03-01`;
+    const end = shift(start, days - 1);
+    if (end <= limit) list.push({year: y, start, end});
+  }
+  return list.reverse();
+}
+
+function tripPick(p){
+  tripPlace = {name: p.name, latitude: p.latitude, longitude: p.longitude, timezone: p.timezone, admin1: p.admin1, country: p.country};
+  store.set('tripPlace', tripPlace);
+  $('#tripQ').value = '';
+  $('#tripResults').innerHTML = '';
+  tripHeader();
+}
+
+function tripHeader(){
+  const fav = tripPlace && tripFavs.some(f => id(f) === id(tripPlace));
+  $('#tripWhere').innerHTML = tripPlace ? `<b>${esc(tripPlace.name)}</b> <span class="soft">${esc([tripPlace.admin1, tripPlace.country].filter(Boolean).join(', '))}</span> <button id="tripStar">${fav ? '&#9733; Lieblingsort' : '&#9734; Lieblingsort'}</button>` : '<span class="soft">Noch kein Urlaubsort gewählt</span>';
+  if (tripPlace) $('#tripStar').onclick = () => {
+    tripFavs = fav ? tripFavs.filter(f => id(f) !== id(tripPlace)) : [...tripFavs, tripPlace];
+    store.set('tripFavs', tripFavs); tripHeader();
+  };
+  $('#tripFavs').innerHTML = tripFavs.length ? '<span class="soft">Lieblingsorte:</span>' + tripFavs.map((f, i) => `<span class="tripChip"><button data-f="${i}" class="${tripPlace && id(f) === id(tripPlace) ? 'on' : ''}">${esc(f.name)}</button><button class="x" data-fx="${i}" aria-label="Lieblingsort ${esc(f.name)} entfernen">&times;</button></span>`).join('') : '';
+  $('#tripFavs').querySelectorAll('[data-f]').forEach(b => b.onclick = () => { tripPick(tripFavs[+b.dataset.f]); loadTrip() });
+  $('#tripFavs').querySelectorAll('[data-fx]').forEach(b => b.onclick = () => { tripFavs.splice(+b.dataset.fx, 1); store.set('tripFavs', tripFavs); tripHeader() });
+  $('#tripSaved').innerHTML = (trips.length ? '<span class="soft">Gemerkte Reisen:</span>' : '') + trips.map((t, i) => `<span class="tripChip"><button data-t="${i}">${esc(t.place.name)} <small>${tripDay(t.from)}–${tripDay(t.to)}</small></button><button class="x" data-x="${i}" aria-label="Reise ${esc(t.place.name)} entfernen">&times;</button></span>`).join('');
+  $('#tripSaved').querySelectorAll('[data-t]').forEach(b => b.onclick = () => {
+    const t = trips[+b.dataset.t];
+    tripPlace = t.place; store.set('tripPlace', tripPlace);
+    $('#tripFrom').value = t.from; $('#tripTo').value = t.to;
+    tripHeader(); loadTrip();
+  });
+  $('#tripSaved').querySelectorAll('[data-x]').forEach(b => b.onclick = () => { trips.splice(+b.dataset.x, 1); store.set('trips', trips); tripHeader() });
+}
+
+function tripSave(){
+  let period;
+  try { period = tripPeriod() } catch (e) { $('#trips .out').innerHTML = `<p class="msg" role="alert">${esc(e.message)}</p>`; return }
+  const trip = {place: tripPlace, from: period.from, to: period.to};
+  trips = [trip, ...trips.filter(t => tripId(t) !== tripId(trip))].slice(0, 12);
+  store.set('trips', trips);
+  tripHeader();
+}
+
+function loadTrip(){
+  return run('trips', async (out, live) => {
+    const {from, to, days} = tripPeriod(), count = +$('#tripSpan').value, years = tripYears(from, days, count);
+    if (years.length < 3) throw Error('Für diesen Zeitraum gibt es noch zu wenige abgeschlossene Vorjahre.');
+    const where = {latitude: tripPlace.latitude, longitude: tripPlace.longitude, timezone: tripPlace.timezone || 'auto'};
+    const loaded = await pool(years, 3, y => get('archive-api', 'archive', {...where, models: 'era5_seamless', start_date: y.start, end_date: y.end, daily: TRIP_DAILY}));
+    const soon = from <= shift(today(), 15) && to >= today();
+    const forecast = soon ? await get('api', 'forecast', {...where, start_date: from < today() ? today() : from, end_date: to > shift(today(), 15) ? shift(today(), 15) : to, daily: TRIP_DAILY + ',weather_code'}).catch(() => null) : null;
+    if (!live()) return;
+
+    // Je Jahr und je Reisetag die Werte einsammeln.
+    const per = loaded.map((d, i) => ({year: years[i].year, days: d.daily.time.map((_, k) => ({
+      max: d.daily.temperature_2m_max[k], min: d.daily.temperature_2m_min[k], mean: d.daily.temperature_2m_mean[k],
+      rain: d.daily.precipitation_sum[k], snow: d.daily.snowfall_sum[k], wind: d.daily.wind_speed_10m_max[k],
+      sun: d.daily.sunshine_duration[k] == null ? null : d.daily.sunshine_duration[k] / 3600, light: d.daily.daylight_duration[k],
+      rise: d.daily.sunrise[k], set: d.daily.sunset[k]
+    }))}));
+    const all = per.flatMap(y => y.days), of = k => all.map(r => r[k]), n = per.length;
+    const share = test => { const v = all.filter(r => r.max != null); return v.length ? v.filter(test).length / v.length : null };
+    const wetShare = share(r => r.rain >= 1), hot25 = share(r => r.max >= 25), hot30 = share(r => r.max >= 30), frost = share(r => r.min != null && r.min < 0);
+    const byDay = Array.from({length: days}, (_, k) => per.map(y => y.days[k]).filter(Boolean));
+    const dayAvg = key => byDay.map(list => avg(list.map(r => r[key])));
+    const dayShare = test => byDay.map(list => { const v = list.filter(r => r.rain != null); return v.length ? v.filter(test).length / v.length * 100 : null });
+    const latest = per.at(-1).days, first = latest[0], last = latest.at(-1);
+    const yearRows = per.map(y => {
+      const g = k => y.days.map(r => r[k]);
+      return {year: y.year, max: avg(g('max')), min: avg(g('min')), rain: sum(g('rain')), wet: y.days.filter(r => r.rain >= 1).length, sun: avg(g('sun')), hot: y.days.filter(r => r.max >= 25).length};
+    });
+    const best = [...yearRows].sort((a, b) => b.sun - a.sun)[0], worst = [...yearRows].sort((a, b) => b.wet - a.wet)[0];
+    const pct = v => v == null ? '–' : `${Math.round(v * 100)} %`;
+
+    let html = `<p><b>${esc(tripPlace.name)}, ${tripDay(from)} bis ${tripDay(to)}</b> (${days} ${days === 1 ? 'Tag' : 'Tage'}) – so war es in den letzten ${n} Jahren (${per[0].year}–${per.at(-1).year})</p>`
+      + tiles([
+        ['Tagsüber', `${num(avg(of('max')), 0)} °C`, `üblicher Höchstwert, nachts ${num(avg(of('min')), 0)} °C`],
+        ['Sonne', `${num(avg(of('sun')))} h`, `pro Tag, bei ${span(avg(of('light')))} Tageslänge`],
+        ['Regen', pct(wetShare), `Wahrscheinlichkeit pro Tag, Ø ${num(wetShare * days, 0)} von ${days} Tagen`],
+        ['Niederschlag', `${num(sum(of('rain')) / n, 0)} mm`, 'üblich im ganzen Zeitraum'],
+        [hot25 >= .05 ? 'Warme Tage' : 'Frosttage', hot25 >= .05 ? pct(hot25) : pct(frost), hot25 >= .05 ? `ab 25 °C, ab 30 °C: ${pct(hot30)}` : 'Tiefstwert unter 0 °C'],
+        ['Wind', `${num(avg(of('wind')), 0)} km/h`, 'übliche Tagesspitze']
+      ])
+      + `<p class="soft">Sonnenaufgang ${clock(first.rise)}, Sonnenuntergang ${clock(first.set)}${days > 1 ? ` (am Ende: ${clock(last.rise)} / ${clock(last.set)})` : ''}. Sonnigstes Jahr: ${best.year} mit ${num(best.sun)} h pro Tag, nassestes Jahr: ${worst.year} mit ${worst.wet} Regentagen.${of('snow').some(v => v > 0) ? ` Schnee gab es an ${pct(share(r => r.snow >= 1))} der Tage.` : ''}</p>`;
+
+    if (forecast?.daily?.time?.length) {
+      const f = forecast.daily;
+      html += `<div class="card"><h2>Aktuelle Vorhersage für deine Reisetage</h2><div class="scroll"><table><tr><th>Tag</th><th></th><th>Max °C</th><th>Min °C</th><th>Niederschlag mm</th><th>Sonne h</th><th>Wind km/h</th></tr>${f.time.map((t, k) => `<tr><td>${day(t, {weekday: 'short', day: '2-digit', month: '2-digit'})}</td><td>${weather(f.weather_code[k])[0]}</td><td>${num(f.temperature_2m_max[k])}</td><td>${num(f.temperature_2m_min[k])}</td><td>${num(f.precipitation_sum[k])}</td><td>${f.sunshine_duration[k] == null ? '–' : num(f.sunshine_duration[k] / 3600)}</td><td>${num(f.wind_speed_10m_max[k], 0)}</td></tr>`).join('')}</table></div><small class="soft">Ab etwa 7 Tagen im Voraus ist die Vorhersage nur ein Trend.</small></div>`;
+    }
+
+    html += '<div id="tripCharts"></div>'
+      + `<div class="card"><h2>Die Jahre im Vergleich</h2><div class="scroll"><table><tr><th>Jahr</th><th>Max °C (Ø)</th><th>Min °C (Ø)</th><th>Niederschlag mm</th><th>Regentage</th><th>Sonne h pro Tag</th><th>Tage ab 25 °C</th></tr>${[...yearRows].reverse().map(r => `<tr><td>${r.year}</td><td>${num(r.max)}</td><td>${num(r.min)}</td><td>${num(r.rain)}</td><td>${r.wet}</td><td>${num(r.sun)}</td><td>${r.hot}</td></tr>`).join('')}</table></div></div>`
+      + '<p class="soft">Grundlage sind Modelldaten (ERA5) für diesen Ort, keine Messstation. Sonnenstunden liegen meist deutlich über gemessenen Werten, Regentage zählen ab 1 mm.</p>';
+    out.innerHTML = html;
+
+    const labels = Array.from({length: days}, (_, k) => tripDay(shift(from, k)));
+    charts($('#tripCharts'), [
+      {title: 'Temperatur üblich (°C)', unit: '°C', labels, series: [{name: 'Höchstwert', color: 'orange', values: dayAvg('max')}, {name: 'Tiefstwert', color: 'blue', values: dayAvg('min')}]},
+      {title: 'Sonnenstunden üblich', unit: 'h', bars: true, zero: true, labels, series: [{name: 'Sonnenstunden', color: 'yellow', values: dayAvg('sun')}]},
+      {title: 'Regenwahrscheinlichkeit (%)', unit: '%', bars: true, zero: true, labels, series: [{name: 'Regenwahrscheinlichkeit', color: 'blue', values: dayShare(r => r.rain >= 1)}]},
+      {title: 'Niederschlag üblich (mm)', unit: 'mm', bars: true, zero: true, labels, series: [{name: 'Niederschlag', color: 'aqua', values: dayAvg('rain')}]}
+    ]);
+  });
+}
+
+function initTrips(){
+  const start = shift(today(), 30);
+  $('#tripFrom').value = start; $('#tripTo').value = shift(start, 13);
+  $('#tripQ').oninput = () => {
+    clearTimeout(tripTimer);
+    const text = $('#tripQ').value.trim(), t = ++tripSearchNo, box = $('#tripResults');
+    box.innerHTML = '';
+    if (text.length < 2) return;
+    tripTimer = setTimeout(async () => {
+      try {
+        const found = (await get('geocoding-api', 'search', {name: text, count: 10, language: 'de'})).results || [];
+        if (t !== tripSearchNo) return;
+        box.innerHTML = found.length ? found.map(p => `<button>${esc(p.name)} <small>${esc([p.admin1, p.country].filter(Boolean).join(', '))}</small></button>`).join('') : '<p class="msg">Kein Ort gefunden.</p>';
+        box.querySelectorAll('button').forEach((b, i) => b.onclick = () => { tripPick(found[i]); loadTrip() });
+      } catch (e) { if (t === tripSearchNo) box.textContent = e.message }
+    }, 300);
+  };
+  $('#tripQ').onkeydown = e => { if (e.key === 'Enter') $('#tripResults button')?.click(); if (e.key === 'Escape') $('#tripResults').innerHTML = '' };
+  document.addEventListener('click', e => { if (!e.target.closest('.tripSearch')) $('#tripResults').innerHTML = '' });
+  $('#tripGo').onclick = loadTrip;
+  $('#tripSaveBtn').onclick = tripSave;
+  $('#tripSpan').onchange = () => tripPlace && loadTrip();
+  tripHeader();
+}
+
 function show(){
   document.querySelectorAll('section').forEach(s => s.hidden = s.id !== view);
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === view));
-  return {forecast: loadForecast, history: loadHistory, months: loadMonths, years: loadYears}[view]();
+  return {forecast: loadForecast, history: loadHistory, months: loadMonths, years: loadYears, trips: () => tripPlace ? loadTrip() : null}[view]();
 }
 
 function choose(p){
@@ -960,6 +1147,8 @@ $('#season').onchange = $('#span').onchange = loadYears;
 $('#month').innerHTML = Array.from({length: 12}, (_, i) => `<option value="${i + 1}">${day(`2024-${pad(i + 1)}-01`, {month: 'long'})}</option>`).join('');
 $('#month').value = +shift(today(), -1).slice(5, 7);
 $('#month').onchange = $('#monthSpan').onchange = $('#monthRange').onchange = loadMonths;
+
+initTrips();
 
 const head = $('#head');
 new ResizeObserver(() => document.documentElement.style.setProperty('--head', head.offsetHeight + 'px')).observe(head);
