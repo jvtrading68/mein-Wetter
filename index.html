@@ -1163,7 +1163,7 @@ function choose(p){
 // Ortsfoto, Wappen und Kurzbeschreibung aus Wikidata, Wikimedia Commons und Wikipedia.
 const WIKI_DAYS = 30, wikiLoading = new Map();
 let wikiQueue = Promise.resolve(), wikiPause = 0;
-const wikiKey = p => 'ort2.' + id(p);
+const wikiKey = p => 'ort3.' + id(p);
 const wikiCached = p => { const c = store.get(wikiKey(p), null); return c && Date.now() - c.at < WIKI_DAYS * 864e5 ? c : null };
 const wikiJson = async (host, params) => {
   const res = await fetch(`https://${host}/w/api.php?` + new URLSearchParams({...params, format: 'json', origin: '*'}));
@@ -1186,6 +1186,50 @@ async function commonsFile(file, width){
   return {src: info.thumburl, page: info.descriptionurl, artist: plainText(meta.Artist?.value).slice(0, 80), license: plainText(meta.LicenseShortName?.value)};
 }
 
+// Rückfall, wenn der Ort kein Wappen hat: Region (Landkreis, Bundesland …) über P131 nach oben, zuletzt die Landesflagge.
+const wdValue = (item, prop) => item?.claims?.[prop]?.[0]?.mainsnak?.datavalue?.value;
+const wdIds = (item, prop) => (item?.claims?.[prop] || []).map(c => c.mainsnak?.datavalue?.value?.id).filter(Boolean);
+const wdEntities = async ids => ids.length ? (await wikiJson('www.wikidata.org', {action: 'wbgetentities', ids: ids.slice(0, 5).join('|'), props: 'claims|labels', languages: 'de'})).entities || {} : {};
+const wdLabel = e => e?.labels?.de?.value || '';
+
+async function armsFallback(p, item){
+  let country = wdIds(item, 'P17')[0] || null;
+  // 1. Übergeordnete Gebiete des Orts, höchstens vier Ebenen
+  let ids = wdIds(item, 'P131');
+  for (let level = 0; level < 4 && ids.length; level++) {
+    const ents = Object.values(await wdEntities(ids)).filter(e => e.id !== country);
+    const region = ents.find(e => wdValue(e, 'P94'));
+    if (region) {
+      const f = await commonsFile(wdValue(region, 'P94'), 160);
+      if (f) return {src: f.src, from: 'Wappen: ' + wdLabel(region)};
+    }
+    country ||= ents.map(e => wdIds(e, 'P17')[0]).find(Boolean) || null;
+    ids = [...new Set(ents.flatMap(e => wdIds(e, 'P131')))].filter(x => x !== country);
+  }
+  // 2. Ohne Wikidata-Eintrag für den Ort: Region über ihren Namen (z. B. „Neuschottland“)
+  if (!item && p.admin1) {
+    const hits = ((await wikiJson('www.wikidata.org', {action: 'wbsearchentities', search: p.admin1, language: 'de', uselang: 'de', type: 'item', limit: 5})).search || []).map(s => s.id);
+    const ents = Object.values(await wdEntities(hits));
+    const region = ents.find(e => wdValue(e, 'P94') && armsKey(wdLabel(e)) === armsKey(p.admin1)) || ents.find(e => wdValue(e, 'P94') && wdIds(e, 'P17').length);
+    if (region) {
+      const f = await commonsFile(wdValue(region, 'P94'), 160);
+      if (f) return {src: f.src, from: 'Wappen: ' + wdLabel(region)};
+    }
+    country ||= ents.map(e => wdIds(e, 'P17')[0]).find(Boolean) || null;
+  }
+  // 3. Landesflagge
+  if (!country && p.country) {
+    const hits = ((await wikiJson('www.wikidata.org', {action: 'wbsearchentities', search: p.country, language: 'de', uselang: 'de', type: 'item', limit: 3})).search || []).map(s => s.id);
+    country = Object.values(await wdEntities(hits)).find(e => wdValue(e, 'P41'))?.id || null;
+  }
+  if (country) {
+    const land = (await wdEntities([country]))[country];
+    const f = await commonsFile(wdValue(land, 'P41'), 160);
+    if (f) return {src: f.src, from: 'Flagge: ' + wdLabel(land)};
+  }
+  return null;
+}
+
 async function wikiFetch(p){
   const name = p.name.trim(), here = {lat: p.latitude, lon: p.longitude};
   const found = (await wikiJson('www.wikidata.org', {action: 'wbsearchentities', search: name, language: 'de', uselang: 'de', type: 'item', limit: 12})).search || [];
@@ -1193,7 +1237,8 @@ async function wikiFetch(p){
   const same = found.filter(s => armsKey(s.label) === armsKey(name) || armsKey(s.match?.text) === armsKey(name)).map(s => s.id);
   // Fest eingetragenes Wappen (Datei auf Wikimedia Commons) geht vor.
   const fixed = armsEntry(p)?.file, fixedArms = fixed ? (await commonsFile(fixed, 160))?.src : undefined;
-  if (!same.length) return {at: Date.now(), arms: fixedArms};
+  const backup = async item => fixedArms ? {src: fixedArms} : await armsFallback(p, item);
+  if (!same.length) { const b = await backup(null); return {at: Date.now(), arms: b?.src, armsFrom: b?.from} }
   const items = (await wikiJson('www.wikidata.org', {action: 'wbgetentities', ids: same.join('|'), props: 'claims|sitelinks', sitefilter: 'dewiki'})).entities || {};
   const value = (item, prop) => item.claims?.[prop]?.[0]?.mainsnak?.datavalue?.value;
   const best = Object.values(items).map(item => {
@@ -1202,7 +1247,7 @@ async function wikiFetch(p){
     const town = item.claims?.P1082 || item.claims?.P94;
     return c && town ? {item, dist: km(here, {lat: c.latitude, lon: c.longitude})} : null;
   }).filter(x => x && x.dist < 20).sort((a, b) => (b.item.claims?.P94 ? 1 : 0) - (a.item.claims?.P94 ? 1 : 0) || a.dist - b.dist)[0];
-  if (!best) return {at: Date.now(), arms: fixedArms};
+  if (!best) { const b = await backup(null); return {at: Date.now(), arms: b?.src, armsFrom: b?.from} }
   const title = best.item.sitelinks?.dewiki?.title;
   const [arms, photo, summary] = await Promise.all([
     fixed ? {src: fixedArms} : commonsFile(value(best.item, 'P94'), 160),
@@ -1212,7 +1257,8 @@ async function wikiFetch(p){
   let text = (summary?.extract || '').replace(/\s*\[[^\]]*\]/g, '').replace(/\s*\([^)]*[ˈːɐ̯][^)]*\)/g, '');
   if (text.length > 420) text = text.slice(0, 420).replace(/[^.!?]*$/, '') || text.slice(0, 400) + ' …';
   const site = value(best.item, 'P856');
-  return {at: Date.now(), arms: arms?.src, photo, text, website: /^https?:\/\//.test(site || '') ? site : null, link: summary?.content_urls?.desktop?.page || (title ? 'https://de.wikipedia.org/wiki/' + encodeURIComponent(title) : null)};
+  const own = arms?.src ? {src: arms.src} : await backup(best.item);
+  return {at: Date.now(), arms: own?.src, armsFrom: own?.from, photo, text, website: /^https?:\/\//.test(site || '') ? site : null, link: summary?.content_urls?.desktop?.page || (title ? 'https://de.wikipedia.org/wiki/' + encodeURIComponent(title) : null)};
 }
 
 function wikiFor(p){
@@ -1228,7 +1274,7 @@ function wikiFor(p){
     if ((tripPlace && id(tripPlace) === id(p)) || tripFavs.some(f => id(f) === id(p))) tripHeader();
   }).catch(() => { wikiPause = Date.now() + 6e5 }).finally(() => wikiLoading.delete(key));
   wikiLoading.set(key, job);
-  wikiQueue = job.then(() => new Promise(done => setTimeout(done, 400)));
+  wikiQueue = job.then(() => new Promise(done => setTimeout(done, 1500)));
 }
 
 function wikiFill(){
@@ -1258,7 +1304,7 @@ const armsOf = p => armsEntry(p)?.src || wikiCached(p)?.arms;
 function header(){
   const coat = armsOf(place);
   $('#arms').hidden = !coat;
-  if (coat) { $('#arms').src = coat; $('#arms').alt = 'Wappen von ' + place.name }
+  if (coat) { $('#arms').src = coat; $('#arms').alt = 'Wappen von ' + place.name; $('#arms').title = armsEntry(place) ? '' : wikiCached(place)?.armsFrom || '' }
   $('#place').textContent = place.name;
   $('#region').textContent = [place.admin2, place.admin1, place.country].filter((v, i, a) => v && a.indexOf(v) === i).join(', ');
   const saved = favs.some(p => id(p) === id(place));
@@ -1382,7 +1428,7 @@ $('#month').onchange = $('#monthSpan').onchange = $('#monthRange').onchange = lo
 initTrips();
 
 // Versionskennung: bei jedem Update erhöhen, damit installierte Apps den Hinweis „Neue Version verfügbar“ zeigen.
-const APP_VERSION = '2026-11-23.2';
+const APP_VERSION = '2026-11-23.3';
 let lastUpdateCheck = 0;
 function checkUpdate(){
   if (!/^https?:$/.test(location.protocol) || Date.now() - lastUpdateCheck < 6e4 || $('#updateBar')) return;
